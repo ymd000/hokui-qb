@@ -1,3 +1,15 @@
-.dev.vars
-node_modules/
-.wrangler/
+# すべて無視してから許可するものを明示
+/*
+!/src/
+!/public/
+!/.gitignore
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/wrangler.toml
+
+# src/ 以下を再帰的に許可
+/src/*
+
+# public/ 以下を再帰的に許可
+/public/*
