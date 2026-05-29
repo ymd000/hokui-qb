@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>科目一覧 | 北医QB</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="header">
+    <span class="header-title">北医QB</span>
+    <a href="/logout" class="header-logout">ログアウト</a>
+  </header>
+  <div class="container">
+    <h2>科目一覧</h2>
+    <ul class="subject-list" id="subject-list">
+      <li>読み込み中...</li>
+    </ul>
+  </div>
+  <script>
+    fetch('/api/subjects')
+      .then(r => { if (r.status === 401) { location.href = '/login'; throw new Error() } return r.json() })
+      .then(subjects => {
+        const list = document.getElementById('subject-list')
+        list.innerHTML = subjects.map(s => `
+          <li class="subject-item">
+            <a href="/quiz/${encodeURIComponent(s.subject)}" class="subject-link">
+              <span class="subject-name">${s.subject}</span>
+              <span class="subject-meta">${s.years.length}年度 &nbsp;·&nbsp; ${s.total}問</span>
+            </a>
+          </li>
+        `).join('')
+      })
+  </script>
+</body>
+</html>

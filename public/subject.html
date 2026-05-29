@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>科目 | 北医QB</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="header">
+    <span class="header-title">北医QB</span>
+    <a href="/logout" class="header-logout">ログアウト</a>
+  </header>
+  <div class="container" id="main">
+    <p>読み込み中...</p>
+  </div>
+  <script>
+    // URL: /quiz/呼吸器内科 → subject = "呼吸器内科"
+    const subject = decodeURIComponent(location.pathname.split('/')[2])
+
+    fetch('/api/subjects')
+      .then(r => { if (r.status === 401) { location.href = '/login'; throw new Error() } return r.json() })
+      .then(subjects => {
+        const subj = subjects.find(s => s.subject === subject)
+        if (!subj) { location.href = '/quiz'; return }
+
+        document.title = `${subj.subject} | 北医QB`
+        document.getElementById('main').innerHTML = `
+          <div class="breadcrumb"><a href="/quiz">科目一覧</a> › ${subj.subject}</div>
+          <h2>${subj.subject}</h2>
+          <ul class="set-list">
+            ${subj.years.map(y => `
+              <li class="set-item">
+                <div class="set-card">
+                  <span class="set-name">${y.year}年</span>
+                  <span class="set-count">${y.count}問</span>
+                </div>
+                <div class="set-actions">
+                  <a href="/quiz/${encodeURIComponent(subj.subject)}/${y.year}?mode=learn" class="btn btn-learn">学習モード</a>
+                  <a href="/quiz/${encodeURIComponent(subj.subject)}/${y.year}?mode=exam" class="btn btn-exam">テストモード</a>
+                </div>
+              </li>
+            `).join('')}
+          </ul>
+        `
+      })
+  </script>
+</body>
+</html>

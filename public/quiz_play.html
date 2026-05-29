@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>演習 | 北医QB</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="header">
+    <span class="header-title">北医QB</span>
+    <a href="/logout" class="header-logout">ログアウト</a>
+  </header>
+
+  <div class="container" id="quiz-container">
+    <p>問題を読み込み中...</p>
+  </div>
+
+  <script>
+    // URL: /quiz/呼吸器内科/2025 → SUBJECT, YEAR を取り出す
+    const parts = location.pathname.split('/')
+    const SUBJECT = decodeURIComponent(parts[2])
+    const YEAR = Number(parts[3])
+    // TOTAL は app.js の init() 内で questions.length から設定する
+    let TOTAL = 0
+  </script>
+  <script src="/app.js"></script>
+</body>
+</html>
