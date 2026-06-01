@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="header">
-    <span class="header-title">北医QB</span>
+    <a href="/quiz" class="header-title">北医QB</a>
     <a href="/logout" class="header-logout">ログアウト</a>
   </header>
   <div class="container" id="main">
@@ -29,15 +29,15 @@
           <div class="breadcrumb"><a href="/quiz">科目一覧</a> › ${subj.subject}</div>
           <h2>${subj.subject}</h2>
           <ul class="set-list">
-            ${subj.years.map(y => `
+            ${subj.cohorts.map(y => `
               <li class="set-item">
                 <div class="set-card">
-                  <span class="set-name">${y.year}年</span>
+                  <span class="set-name">${y.cohort}期</span>
                   <span class="set-count">${y.count}問</span>
                 </div>
                 <div class="set-actions">
-                  <a href="/quiz/${encodeURIComponent(subj.subject)}/${y.year}?mode=learn" class="btn btn-learn">学習モード</a>
-                  <a href="/quiz/${encodeURIComponent(subj.subject)}/${y.year}?mode=exam" class="btn btn-exam">テストモード</a>
+                  <a href="/quiz/${encodeURIComponent(subj.subject)}/${y.cohort}?mode=learn" class="btn btn-learn">学習モード</a>
+                  <a href="/quiz/${encodeURIComponent(subj.subject)}/${y.cohort}?mode=exam" class="btn btn-exam">テストモード</a>
                 </div>
               </li>
             `).join('')}

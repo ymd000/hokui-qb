@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="header">
-    <span class="header-title">北医QB</span>
+    <a href="/quiz" class="header-title">北医QB</a>
     <a href="/logout" class="header-logout">ログアウト</a>
   </header>
   <div class="container">
@@ -19,18 +19,23 @@
   </div>
   <script>
     fetch('/api/subjects')
-      .then(r => { if (r.status === 401) { location.href = '/login'; throw new Error() } return r.json() })
+      .then(r => { 
+        if (r.status === 401) { location.href = '/login'; throw new Error() }
+        if (!r.ok) { location.href = `/quiz`; return; }
+        return r.json() 
+      })
       .then(subjects => {
         const list = document.getElementById('subject-list')
         list.innerHTML = subjects.map(s => `
           <li class="subject-item">
             <a href="/quiz/${encodeURIComponent(s.subject)}" class="subject-link">
               <span class="subject-name">${s.subject}</span>
-              <span class="subject-meta">${s.years.length}年度 &nbsp;·&nbsp; ${s.total}問</span>
+              <span class="subject-meta">${s.cohorts.length}期 &nbsp;·&nbsp; ${s.total}問</span>
             </a>
           </li>
         `).join('')
       })
+      .catch(() => {})
   </script>
 </body>
 </html>

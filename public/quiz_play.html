@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="header">
-    <span class="header-title">北医QB</span>
+    <a href="/quiz" class="header-title">北医QB</a>
     <a href="/logout" class="header-logout">ログアウト</a>
   </header>
 
@@ -17,10 +17,10 @@
   </div>
 
   <script>
-    // URL: /quiz/呼吸器内科/2025 → SUBJECT, YEAR を取り出す
+    // URL: /quiz/呼吸器内科/2025 → SUBJECT, COHORT を取り出す
     const parts = location.pathname.split('/')
     const SUBJECT = decodeURIComponent(parts[2])
-    const YEAR = Number(parts[3])
+    const COHORT = Number(parts[3])
     // TOTAL は app.js の init() 内で questions.length から設定する
     let TOTAL = 0
   </script>

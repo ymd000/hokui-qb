@@ -15,33 +15,40 @@ type Question = {
   id: number
   subject: string
   year: number
+  cohort: number
   question: string
   choices: string[]
-  answer: string
+  answer: number | number[]
   explanation: string
+}
+
+type SubjectSummary = {
+  subject: string
+  cohorts: { cohort: number, count: number }[]
+  total: number
 }
 
 // ---------- 問題データ処理 ----------
 
-const allQuestions = questions as Question[]
+const allQuestions: Question[] = questions
 
-function getSubjects() {
+function getSubjects(): SubjectSummary[] {
   const map: Record<string, Record<number, number>> = {}
   for (const q of allQuestions) {
     if (!map[q.subject]) map[q.subject] = {}
-    map[q.subject][q.year] = (map[q.subject][q.year] ?? 0) + 1
+    map[q.subject][q.cohort] = (map[q.subject][q.cohort] ?? 0) + 1
   }
-  return Object.entries(map).map(([subject, yearCounts]) => ({
+  return Object.entries(map).map(([subject, cohortCounts]) => ({
     subject,
-    years: Object.entries(yearCounts)
-      .map(([y, count]) => ({ year: Number(y), count }))
-      .sort((a, b) => b.year - a.year),
-    total: Object.values(yearCounts).reduce((s, c) => s + c, 0),
+    cohorts: Object.entries(cohortCounts)
+      .map(([y, count]) => ({ cohort: Number(y), count }))
+      .sort((a, b) => b.cohort - a.cohort),
+    total: Object.values(cohortCounts).reduce((s, c) => s + c, 0),
   }))
 }
 
-function getQuestions(subject: string, year: number) {
-  return allQuestions.filter(q => q.subject === subject && q.year === year)
+function getQuestions(subject: string, cohort: number): Question[] {
+  return allQuestions.filter(q => q.subject === subject && q.cohort === cohort)
 }
 
 // ---------- 認証ヘルパー ----------
@@ -50,7 +57,7 @@ function isLoggedIn(c: Context<Env>): boolean {
   return getCookie(c, 'logged_in') === '1'
 }
 
-function serveAsset(c: Context<Env>, path: string) {
+function serveAsset(c: Context<Env>, path: string): Promise<Response> {
   const url = new URL(path, c.req.url)
   return c.env.ASSETS.fetch(new Request(url.toString()))
 }
@@ -107,6 +114,7 @@ app.get('/api/questions/:subject/:year', (c) => {
   if (!isLoggedIn(c)) return c.json({ error: 'unauthorized' }, 401)
   const subject = decodeURIComponent(c.req.param('subject'))
   const year = Number(c.req.param('year'))
+  if (isNaN(year)) return c.json({ error: 'invalid year' }, 400)
   return c.json(getQuestions(subject, year))
 })
 

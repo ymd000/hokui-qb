@@ -21,6 +21,7 @@
   <script>
     if (new URLSearchParams(location.search).get('error')) {
       document.getElementById('error-msg').style.display = 'block'
+      history.replaceState({}, '', '/login')
     }
   </script>
 </body>
