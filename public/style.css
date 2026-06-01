@@ -20,7 +20,12 @@ body {
   justify-content: space-between;
   align-items: center;
 }
-.header-title { font-weight: bold; font-size: 1rem; }
+.header-title { 
+  font-weight: bold; 
+  font-size: 1rem; 
+  text-decoration: none;
+  color: inherit;
+}
 .header-user { font-size: 0.85rem; }
 .header-user a { color: #a8c8f0; text-decoration: none; }
 .header-user a:hover { text-decoration: underline; }
@@ -256,6 +261,7 @@ body {
 }
 .explanation strong { font-size: 0.85rem; color: #1a3a5c; }
 .explanation p { margin-top: 4px; font-size: 0.95rem; }
+.correct-answer { font-size: 0.95rem; font-weight: bold; margin-bottom: 10px; }
 
 /* 問題ページのナビゲーション */
 .question-nav {

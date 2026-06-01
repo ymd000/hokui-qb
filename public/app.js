@@ -1,4 +1,4 @@
-// SUBJECT / YEAR は quiz_play.html が URL から取り出して設定する
+// SUBJECT / COHORT は quiz_play.html が URL から取り出して設定する
 
 let questions = [];
 let answers = {};
@@ -11,36 +11,18 @@ async function init() {
   mode = params.get('mode') || 'learn';
   currentIndex = parseInt(params.get('i') || '0', 10);
 
-  const cacheKey = `questions_${SUBJECT}_${YEAR}`;
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    questions = JSON.parse(cached);
-  } else {
-    const res = await fetch(`/api/questions/${encodeURIComponent(SUBJECT)}/${YEAR}`);
-    if (res.status === 401) { location.href = '/login'; return; }
-    questions = await res.json();
-    localStorage.setItem(cacheKey, JSON.stringify(questions));
-  }
+  const res = await fetch(`/api/questions/${encodeURIComponent(SUBJECT)}/${COHORT}`);
+  if (res.status === 401) { location.href = '/login'; return; }
+  if (!res.ok) { location.href = `/quiz/${encodeURIComponent(SUBJECT)}`; return; }
+  questions = await res.json();
 
-  // TOTAL をここで確定する（サーバー埋め込みではなく questions の長さから）
   TOTAL = questions.length;
 
-  const orderKey = `order_${SUBJECT}_${YEAR}_${mode}`;
-  if (mode === 'exam') {
-    const storedOrder = localStorage.getItem(orderKey);
-    if (storedOrder) {
-      order = JSON.parse(storedOrder);
-    } else {
-      order = shuffle(questions.map((_, i) => i));
-      localStorage.setItem(orderKey, JSON.stringify(order));
-    }
-  } else {
-    order = questions.map((_, i) => i);
-  }
+  order = mode === 'exam'
+    ? shuffle(questions.map((_, i) => i))
+    : questions.map((_, i) => i);
 
-  const answersKey = `answers_${SUBJECT}_${YEAR}_${mode}`;
-  const storedAnswers = localStorage.getItem(answersKey);
-  answers = storedAnswers ? JSON.parse(storedAnswers) : {};
+  answers = {};
 
   render();
 }
@@ -54,14 +36,40 @@ function shuffle(arr) {
   return a;
 }
 
-function saveAnswers() {
-  localStorage.setItem(`answers_${SUBJECT}_${YEAR}_${mode}`, JSON.stringify(answers));
-}
-
 function navigate(index) {
   currentIndex = index;
   const params = new URLSearchParams({ mode, i: index });
   history.pushState({}, '', `?${params}`);
+  render();
+}
+
+// テストモード専用：現在の選択を記録してから移動
+function recordAndNavigate(index) {
+  const form = document.getElementById('answer-form');
+  const qData = questions[order[currentIndex]];
+  const isMultiple = Array.isArray(qData.answer);
+
+  if (isMultiple) {
+    const checked = [...form.querySelectorAll('input[name="selected"]:checked')]
+      .map(el => parseInt(el.value, 10));
+    if (checked.length > 0) {
+      const correct = checked.length === qData.answer.length &&
+        checked.every(v => qData.answer.includes(v));
+      answers[currentIndex] = { selected: checked, correct };
+    }
+  } else {
+    const selectedEl = form.querySelector('input[name="selected"]:checked');
+    if (selectedEl) {
+      const selected = parseInt(selectedEl.value, 10);
+      answers[currentIndex] = { selected, correct: selected === qData.answer };
+    }
+  }
+  navigate(index);
+}
+
+// 学習モード：その問題だけ未回答に戻す
+function retry() {
+  delete answers[currentIndex];
   render();
 }
 
@@ -78,14 +86,22 @@ function render() {
   const progressPct = Math.round((currentIndex + 1) / TOTAL * 100);
   const modeLabel = mode === 'exam' ? 'テストモード &nbsp;|&nbsp; ' : '';
 
+  const isMultiple = Array.isArray(qData.answer);
+  const inputType = isMultiple ? 'checkbox' : 'radio';
+
   const choicesHtml = qData.choices.map((choice, i) => {
     let cls = 'choice-label';
-    if (answer !== undefined && i === answer.selected) cls += ' choice-selected';
+    const isSelected = answer !== undefined && (
+      Array.isArray(answer.selected)
+        ? answer.selected.includes(i)
+        : i === answer.selected
+    );
+    if (isSelected) cls += ' choice-selected';
     return `
       <li>
         <label class="${cls}">
-          <input type="radio" name="selected" value="${i}"
-            ${answer !== undefined && i === answer.selected ? 'checked' : ''}>
+          <input type="${inputType}" name="selected" value="${i}"
+            ${isSelected ? 'checked' : ''}>
           ${choice}
         </label>
       </li>
@@ -101,35 +117,48 @@ function render() {
     ? `<p class="result-label ${answer.correct ? 'correct' : 'incorrect'}">${answer.correct ? '✓ 正解' : '✗ 不正解'}</p>`
     : '';
 
-  const explanation = answer !== undefined && mode === 'learn'
-    ? `<div class="explanation"><strong>解説</strong><p>${qData.explanation}</p></div>`
+  const correctAnswerText = Array.isArray(qData.answer)
+    ? qData.answer.map(i => qData.choices[i]).join('、')
+    : qData.choices[qData.answer];
+
+  const explanation = answer !== undefined
+    ? `<div class="explanation">
+        <p class="correct-answer">解答：${correctAnswerText}</p>
+        <strong>解説</strong><p>${qData.explanation}</p>
+      </div>`
     : '';
 
-  const submitBtn = answer !== undefined
-    ? `<button type="submit" class="btn btn-change">回答を変更する</button>`
-    : `<button type="submit" class="btn btn-primary">回答する</button>`;
+  // 学習モード: 未回答→「回答する」、回答済み→「リトライ」
+  // テストモード: ボタンなし
+  let submitBtn = '';
+  if (mode === 'learn') {
+    submitBtn = answer !== undefined
+      ? `<button type="button" class="btn btn-change" onclick="retry()">リトライ</button>`
+      : `<button type="submit" class="btn btn-primary">回答する</button>`;
+  }
 
   const prevBtn = currentIndex > 0
     ? `<button class="btn btn-nav" onclick="navigate(${currentIndex - 1})">← 前の問題</button>`
     : `<span class="btn btn-disabled">← 前の問題</span>`;
 
-  const allAnswered = Array.from({ length: TOTAL }, (_, i) => i).every(i => i in answers);
   const subjectUrl = `/quiz/${encodeURIComponent(SUBJECT)}`;
   let nextBtn;
   if (currentIndex + 1 < TOTAL) {
-    const btnClass = answer !== undefined ? 'btn-nav-next' : 'btn-nav';
-    nextBtn = `<button class="btn ${btnClass}" onclick="navigate(${currentIndex + 1})">次の問題 →</button>`;
+    if (mode === 'exam') {
+      // テストモード: 常に「次の問題」（選択を自動記録してから移動）
+      nextBtn = `<button class="btn btn-nav-next" onclick="recordAndNavigate(${currentIndex + 1})">次の問題 →</button>`;
+    } else {
+      const btnClass = answer !== undefined ? 'btn-nav-next' : 'btn-nav';
+      nextBtn = `<button class="btn ${btnClass}" onclick="navigate(${currentIndex + 1})">次の問題 →</button>`;
+    }
   } else if (mode === 'learn') {
     nextBtn = `<a href="${subjectUrl}" class="btn btn-nav">年度一覧に戻る</a>`;
-  } else if (allAnswered) {
-    nextBtn = `<button class="btn btn-result" onclick="navigate(-1)">結果を見る →</button>`;
   } else {
-    nextBtn = `<span class="btn btn-disabled">結果を見る →</span>`;
+    // テストモード最終問題: 「結果を見る」（最後の選択も記録）
+    nextBtn = `<button class="btn btn-result" onclick="recordAndNavigate(-1)">結果を見る →</button>`;
   }
 
-  const backLink = mode === 'learn'
-    ? `<div class="back-to-list"><a href="${subjectUrl}">← 年度一覧に戻る</a></div>`
-    : '';
+  const backLink = `<div class="back-to-list"><a href="${subjectUrl}">← 年度一覧に戻る</a></div>`;
 
   container.innerHTML = `
     <div class="progress-bar-wrap">
@@ -138,7 +167,7 @@ function render() {
     <p class="progress-text">${modeLabel}第${currentIndex + 1}問 / 全${TOTAL}問</p>
 
     <div class="${cardClass}">
-      <p class="genre-badge">${SUBJECT} ${YEAR}年</p>
+      <p class="genre-badge">${SUBJECT} ${COHORT}期</p>
       <p class="question-text">${qData.question}</p>
       ${resultLabel}
 
@@ -156,17 +185,31 @@ function render() {
     ${backLink}
   `;
 
-  document.getElementById('answer-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const selected = parseInt(
-      e.target.querySelector('input[name="selected"]:checked')?.value,
-      10,
-    );
-    if (isNaN(selected)) return;
-    answers[currentIndex] = { selected, correct: selected === qData.answer };
-    saveAnswers();
-    render();
-  });
+  // 学習モードのみ: フォーム送信で正誤判定
+  if (mode === 'learn') {
+    document.getElementById('answer-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      if (isMultiple) {
+        const checked = [...e.target.querySelectorAll('input[name="selected"]:checked')]
+          .map(el => parseInt(el.value, 10));
+        if (checked.length !== qData.answer.length) {
+          alert(`${qData.answer.length}個選んでください（現在${checked.length}個）`);
+          return;
+        }
+        const correct = checked.every(v => qData.answer.includes(v));
+        answers[currentIndex] = { selected: checked, correct };
+      } else {
+        const selected = parseInt(
+          e.target.querySelector('input[name="selected"]:checked')?.value,
+          10,
+        );
+        if (isNaN(selected)) return;
+        answers[currentIndex] = { selected, correct: selected === qData.answer };
+      }
+      render();
+    });
+  }
 
   document.querySelectorAll('.choice-label').forEach(label => {
     label.addEventListener('click', () => {
@@ -189,10 +232,16 @@ function renderResult() {
     const a = answers[i];
     const choicesHtml = q.choices.map((choice, ci) => {
       let cls = '';
-      if (ci === q.answer) cls = 'choice-correct';
-      else if (a && ci === a.selected && !a.correct) cls = 'choice-wrong';
-      const correctMark = ci === q.answer && a && !a.correct ? ' ← 正解' : '';
-      return `<li class="${cls}">${choice}${correctMark}</li>`;
+      const isCorrectChoice = Array.isArray(q.answer)
+        ? q.answer.includes(ci)
+        : ci === q.answer;
+      const isWrongSelected = a && !a.correct && (
+        Array.isArray(a.selected) ? a.selected.includes(ci) : ci === a.selected
+      );
+      if (isCorrectChoice) cls = 'choice-correct';
+      else if (isWrongSelected) cls = 'choice-wrong';
+      const correctMark = isCorrectChoice && a && !a.correct ? ' ← 正解' : '';
+     return `<li class="${cls}">${choice}${correctMark}</li>`;
     }).join('');
 
     const itemClass = a?.correct ? 'item-correct' : 'item-incorrect';
@@ -207,7 +256,7 @@ function renderResult() {
 
   const subjectUrl = `/quiz/${encodeURIComponent(SUBJECT)}`;
   container.innerHTML = `
-    <h2>${SUBJECT} ${YEAR}年</h2>
+    <h2>${SUBJECT} ${COHORT}期</h2>
     <div class="score-display">
       ${correctCount} <span class="score-denom">/ ${TOTAL} 問正解</span>
     </div>
@@ -220,13 +269,10 @@ function renderResult() {
 }
 
 function resetQuiz() {
-  localStorage.removeItem(`answers_${SUBJECT}_${YEAR}_${mode}`);
-  localStorage.removeItem(`order_${SUBJECT}_${YEAR}_${mode}`);
   answers = {};
-  if (mode === 'exam') {
-    order = shuffle(questions.map((_, i) => i));
-    localStorage.setItem(`order_${SUBJECT}_${YEAR}_${mode}`, JSON.stringify(order));
-  }
+  order = mode === 'exam'
+    ? shuffle(questions.map((_, i) => i))
+    : questions.map((_, i) => i);
   navigate(0);
 }
 
