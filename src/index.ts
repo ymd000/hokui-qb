@@ -19,7 +19,7 @@ type Question = {
   question: string
   choices: string[]
   answer: number | number[]
-  explanation: string
+  explanation: string | null
 }
 
 type SubjectSummary = {
