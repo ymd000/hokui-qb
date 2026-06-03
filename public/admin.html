@@ -6,6 +6,7 @@
   <title>管理者 | 北医QB</title>
   <link rel="stylesheet" href="/style.css">
   <style>
+    body { background: #2c2f33; }
     .admin-container { max-width: 800px; margin: 32px auto; padding: 0 16px; }
     .panel { background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
     .panel h2 { margin-bottom: 20px; }
@@ -44,6 +45,48 @@
     .tab.active { background: #1a3a5c; color: #fff; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
+    .report-group { background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,0.08); margin-bottom:16px; border-left:4px solid #e74c3c; }
+    .report-group-meta { font-size:0.8rem; color:#888; margin-bottom:4px; }
+    .report-group-question { font-size:0.95rem; font-weight:bold; margin-bottom:12px; }
+    .report-item { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:10px 0; border-top:1px solid #eee; }
+    .report-item-body { flex:1; }
+    .report-item-date { font-size:0.75rem; color:#aaa; margin-bottom:2px; }
+    .report-item-comment { font-size:0.9rem; }
+    .report-group-actions { display:flex; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid #eee; }
+    .badge { display:inline-block; background:#e74c3c; color:#fff; border-radius:10px; font-size:0.75rem; padding:1px 7px; margin-left:6px; }
+    .reports-empty { text-align:center; color:#888; padding:40px 0; }
+    details.subject-section { margin-bottom:12px; }
+    details.subject-section summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 20px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: bold;
+      color: #1a3a5c;
+      user-select: none;
+    }
+    details.subject-section summary::-webkit-details-marker { display: none; }
+    details.subject-section summary::before {
+      content: '▶';
+      font-size: 0.75rem;
+      color: #aaa;
+      transition: transform 0.15s;
+    }
+    details.subject-section[open] summary::before { transform: rotate(90deg); }
+    details.subject-section[open] summary { border-radius: 10px 10px 0 0; box-shadow: 0 1px 0 rgba(0,0,0,0.06); margin-bottom: 0; }
+    .subject-section-body {
+      background: #f8f9fb;
+      border-radius: 0 0 10px 10px;
+      padding: 16px;
+      margin-bottom: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
   </style>
 </head>
 <body>
@@ -56,6 +99,7 @@
     <div class="tab-bar">
       <button class="tab active" onclick="switchTab('add')">問題を追加</button>
       <button class="tab" onclick="switchTab('edit')">問題を変更</button>
+      <button class="tab" id="tab-btn-reports" onclick="switchTab('reports')">報告一覧</button>
     </div>
 
     <!-- 追加パネル -->
@@ -100,6 +144,20 @@
     <!-- 変更パネル -->
     <div id="tab-edit" class="tab-panel">
       <div class="panel">
+        <h2>絞り込み</h2>
+        <div class="form-row" style="margin-bottom:12px;">
+          <div class="form-group">
+            <label>科目</label>
+            <select id="filter-subject"></select>
+          </div>
+          <div class="form-group">
+            <label>期</label>
+            <select id="filter-cohort"></select>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="applyFilter()">絞り込む</button>
+      </div>
+      <div id="question-list-panel" class="panel" style="display:none">
         <h2>問題を選択</h2>
         <ul id="question-list" class="question-list"></ul>
       </div>
@@ -140,6 +198,12 @@
         </form>
       </div>
     </div>
+
+    <!-- 報告一覧パネル -->
+    <div id="tab-reports" class="tab-panel">
+      <div id="reports-container"></div>
+    </div>
+
   </div>
 
   <script>
@@ -155,13 +219,14 @@
 
     // ---------- セレクト初期化 ----------
     function initSelects() {
-      ;['add', 'edit'].forEach(prefix => {
+      ;['add', 'edit', 'filter'].forEach(prefix => {
         const subjectEl = document.getElementById(prefix + '-subject')
-        subjectEl.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join('')
+        if (subjectEl) subjectEl.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join('')
 
         const cohortEl = document.getElementById(prefix + '-cohort')
-        cohortEl.innerHTML = COHORTS.map(c => `<option value="${c}" ${c === 100 ? 'selected' : ''}>${c}期</option>`).join('')
+        if (cohortEl) cohortEl.innerHTML = COHORTS.map(c => `<option value="${c}" ${c === 100 ? 'selected' : ''}>${c}期</option>`).join('')
       })
+
     }
 
     // ---------- タブ切り替え ----------
@@ -170,7 +235,7 @@
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
       document.getElementById('tab-' + name).classList.add('active')
       event.target.classList.add('active')
-      if (name === 'edit') loadQuestions()
+      if (name === 'reports') loadReports()
     }
 
     // ---------- 選択肢エディタ ----------
@@ -279,24 +344,36 @@
       }
     })
 
-    // ---------- 問題一覧読み込み ----------
-    async function loadQuestions() {
-      const res = await fetch('/api/admin/questions')
+    // ---------- フィルター適用 ----------
+    let cachedQuestions = []
+
+    async function applyFilter() {
+      const subject = document.getElementById('filter-subject').value
+      const cohort = document.getElementById('filter-cohort').value
+      const params = new URLSearchParams({ subject, cohort })
+      const res = await fetch(`/api/admin/questions?${params}`)
       if (!res.ok) return
-      const questions = await res.json()
+      cachedQuestions = await res.json()
+
       const list = document.getElementById('question-list')
       list.innerHTML = ''
-      questions.forEach(q => {
-        const li = document.createElement('li')
-        li.className = 'question-item'
-        li.innerHTML = `
-          <span class="question-item-meta">${escHtml(q.subject)} ${q.cohort}期</span>
-          <span class="question-item-text">${escHtml(q.question)}</span>
-          <button class="btn btn-secondary btn-edit" onclick="loadEditForm(${q.id})">編集</button>
-          <button class="btn-delete" onclick="deleteQuestion(${q.id}, this)">削除</button>
-        `
-        list.appendChild(li)
-      })
+      if (cachedQuestions.length === 0) {
+        list.innerHTML = '<li style="color:#888;padding:12px 0;">問題がありません</li>'
+      } else {
+        cachedQuestions.forEach(q => {
+          const li = document.createElement('li')
+          li.className = 'question-item'
+          li.innerHTML = `
+            <span class="question-item-text">${escHtml(q.question)}</span>
+            <button class="btn btn-secondary btn-edit" onclick="loadEditForm(${q.id})">編集</button>
+            <button class="btn-delete" onclick="deleteQuestion(${q.id}, this)">削除</button>
+          `
+          list.appendChild(li)
+        })
+      }
+
+      document.getElementById('question-list-panel').style.display = 'block'
+      document.getElementById('edit-panel').style.display = 'none'
     }
 
     // ---------- 問題削除 ----------
@@ -304,17 +381,17 @@
       if (!confirm('この問題を削除しますか？')) return
       const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' })
       if (res.ok) {
+        cachedQuestions = cachedQuestions.filter(q => q.id !== id)
         btn.closest('.question-item').remove()
-        const editPanel = document.getElementById('edit-panel')
-        if (document.getElementById('edit-id').value == id) editPanel.style.display = 'none'
+        if (document.getElementById('edit-id').value == id) {
+          document.getElementById('edit-panel').style.display = 'none'
+        }
       }
     }
 
     // ---------- 変更フォームに問題を読み込む ----------
-    async function loadEditForm(id) {
-      const res = await fetch('/api/admin/questions')
-      const questions = await res.json()
-      const q = questions.find(q => q.id === id)
+    function loadEditForm(id) {
+      const q = cachedQuestions.find(q => q.id === id)
       if (!q) return
 
       document.getElementById('edit-id').value = q.id
@@ -382,9 +459,129 @@
       }
     }
 
+    // ---------- 報告一覧 ----------
+    async function loadReports() {
+      const res = await fetch('/api/admin/reports')
+      if (!res.ok) return
+      const groups = await res.json()
+
+      // タブバッジ更新
+      const total = groups.reduce((s, g) => s + g.reports.length, 0)
+      const btn = document.getElementById('tab-btn-reports')
+      btn.innerHTML = '報告一覧' + (total > 0 ? `<span class="badge">${total}</span>` : '')
+
+      const container = document.getElementById('reports-container')
+      if (groups.length === 0) {
+        container.innerHTML = '<div class="reports-empty">報告はありません</div>'
+        return
+      }
+
+      // 科目でグループ化
+      const bySubject = {}
+      for (const g of groups) {
+        if (!bySubject[g.subject]) bySubject[g.subject] = []
+        bySubject[g.subject].push(g)
+      }
+
+      container.innerHTML = Object.entries(bySubject).map(([subject, qGroups]) => {
+        const subjectTotal = qGroups.reduce((s, g) => s + g.reports.length, 0)
+        const questionsHtml = qGroups.map(g => `
+          <div class="report-group" id="report-group-${g.question_id}">
+            <div class="report-group-meta">${g.cohort}期 &nbsp;|&nbsp; ${g.reports.length}件の報告</div>
+            <div class="report-group-question">${escHtml(g.question)}</div>
+            ${g.reports.map(r => `
+              <div class="report-item" id="report-item-${r.id}">
+                <div class="report-item-body">
+                  <div class="report-item-date">${r.created_at.slice(0, 10)}</div>
+                  <div class="report-item-comment">${escHtml(r.comment)}</div>
+                </div>
+                <button class="btn-delete" onclick="deleteReport(${r.id}, ${g.question_id})">削除</button>
+              </div>
+            `).join('')}
+            <div class="report-group-actions">
+              <button class="btn btn-secondary" style="width:auto;" onclick="editFromReport(${g.question_id})">この問題を編集</button>
+              <button class="btn-delete" onclick="deleteAllReports(${g.question_id})">報告をすべて削除</button>
+            </div>
+          </div>
+        `).join('')
+
+        return `
+          <details class="subject-section">
+            <summary>${escHtml(subject)}<span class="badge">${subjectTotal}</span></summary>
+            <div class="subject-section-body">${questionsHtml}</div>
+          </details>
+        `
+      }).join('')
+    }
+
+    async function deleteReport(id, questionId) {
+      const res = await fetch(`/api/admin/reports/${id}`, { method: 'DELETE' })
+      if (!res.ok) return
+      document.getElementById('report-item-' + id)?.remove()
+      // グループ内の報告がすべてなくなったら再描画
+      const group = document.getElementById('report-group-' + questionId)
+      if (group && group.querySelectorAll('.report-item').length === 0) {
+        group.remove()
+        updateReportBadge()
+      } else {
+        updateReportBadge()
+      }
+    }
+
+    async function deleteAllReports(questionId) {
+      if (!confirm('この問題への報告をすべて削除しますか？')) return
+      const res = await fetch(`/api/admin/reports/question/${questionId}`, { method: 'DELETE' })
+      if (!res.ok) return
+      document.getElementById('report-group-' + questionId)?.remove()
+      updateReportBadge()
+    }
+
+    function updateReportBadge() {
+      const total = document.querySelectorAll('.report-item').length
+      const btn = document.getElementById('tab-btn-reports')
+      btn.innerHTML = '報告一覧' + (total > 0 ? `<span class="badge">${total}</span>` : '')
+    }
+
+    async function editFromReport(questionId) {
+      const res = await fetch(`/api/admin/questions/${questionId}`)
+      if (!res.ok) return
+      const q = await res.json()
+
+      // キャッシュに載せて変更タブへ切り替え
+      cachedQuestions = [q]
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+      document.getElementById('tab-edit').classList.add('active')
+      document.querySelectorAll('.tab')[1].classList.add('active')
+
+      // フィルター表示を合わせる
+      document.getElementById('filter-subject').value = q.subject
+      document.getElementById('filter-cohort').value = q.cohort
+
+      // 一覧を1件で表示してから編集フォームを開く
+      const list = document.getElementById('question-list')
+      list.innerHTML = `
+        <li class="question-item">
+          <span class="question-item-text">${escHtml(q.question)}</span>
+          <button class="btn btn-secondary btn-edit" onclick="loadEditForm(${q.id})">編集</button>
+          <button class="btn-delete" onclick="deleteQuestion(${q.id}, this)">削除</button>
+        </li>
+      `
+      document.getElementById('question-list-panel').style.display = 'block'
+      loadEditForm(q.id)
+      document.getElementById('edit-panel').scrollIntoView({ behavior: 'smooth' })
+    }
+
     // ---------- 初期化 ----------
     initSelects()
     initAddForm()
+
+    // 起動時に報告バッジを更新
+    fetch('/api/admin/reports').then(r => r.json()).then(groups => {
+      const total = groups.reduce((s, g) => s + g.reports.length, 0)
+      const btn = document.getElementById('tab-btn-reports')
+      if (total > 0) btn.innerHTML = '報告一覧<span class="badge">' + total + '</span>'
+    }).catch(() => {})
 
     // 未ログイン時は /admin/login にリダイレクト
     fetch('/api/admin/questions').then(r => {

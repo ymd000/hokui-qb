@@ -5,6 +5,7 @@ let answers = {};
 let order = [];
 let mode = 'learn';
 let currentIndex = 0;
+let reportedQuestions = new Set(); // 送信済み question_id
 
 async function init() {
   const params = new URLSearchParams(location.search);
@@ -160,6 +161,17 @@ function render() {
 
   const backLink = `<div class="back-to-list"><a href="${subjectUrl}">← 年度一覧に戻る</a></div>`;
 
+  const reportSection = reportedQuestions.has(qData.id)
+    ? `<p class="report-sent">報告を送信しました。ありがとうございます。</p>`
+    : `<div class="report-wrap">
+        <button type="button" class="btn-report-toggle" onclick="toggleReport()">この問題を報告する</button>
+        <div id="report-form" style="display:none">
+          <textarea id="report-comment" placeholder="間違いの内容を教えてください" rows="3"></textarea>
+          <button type="button" class="btn-report-submit" onclick="submitReport(${qData.id})">送信</button>
+          <p id="report-error" style="display:none;color:#c0392b;font-size:0.85rem;margin-top:4px;">内容を入力してください</p>
+        </div>
+      </div>`;
+
   container.innerHTML = `
     <div class="progress-bar-wrap">
       <div class="progress-bar-fill" style="width: ${progressPct}%"></div>
@@ -182,6 +194,7 @@ function render() {
       ${prevBtn}
       ${nextBtn}
     </div>
+    ${reportSection}
     ${backLink}
   `;
 
@@ -274,6 +287,27 @@ function resetQuiz() {
     ? shuffle(questions.map((_, i) => i))
     : questions.map((_, i) => i);
   navigate(0);
+}
+
+function toggleReport() {
+  const form = document.getElementById('report-form');
+  if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitReport(questionId) {
+  const comment = document.getElementById('report-comment')?.value.trim();
+  const errEl = document.getElementById('report-error');
+  if (!comment) { if (errEl) errEl.style.display = 'block'; return; }
+  if (errEl) errEl.style.display = 'none';
+  const res = await fetch('/api/reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question_id: questionId, comment }),
+  });
+  if (res.ok) {
+    reportedQuestions.add(questionId);
+    render();
+  }
 }
 
 window.addEventListener('popstate', () => {

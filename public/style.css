@@ -400,6 +400,41 @@ h2 { font-size: 1.2rem; margin-bottom: 16px; color: #1a3a5c; }
 .subject-name { font-weight: bold; font-size: 1rem; }
 .subject-meta { font-size: 0.85rem; color: #888; }
 
+/* 報告フォーム */
+.report-wrap { margin-top: 16px; }
+.btn-report-toggle {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.btn-report-toggle:hover { color: #888; }
+#report-form { margin-top: 8px; }
+#report-form textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+}
+.btn-report-submit {
+  margin-top: 6px;
+  padding: 6px 14px;
+  background: #e8edf2;
+  border: 1px solid #c5d0db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #333;
+}
+.btn-report-submit:hover { background: #d4dce6; }
+.report-sent { margin-top: 16px; font-size: 0.85rem; color: #888; }
+
 /* パンくず */
 .breadcrumb {
   font-size: 0.85rem;

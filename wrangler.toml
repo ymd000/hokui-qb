@@ -4,6 +4,9 @@ compatibility_date = "2025-05-01"
 workers_dev = true
 preview_urls = false
 
+[triggers]
+crons = ["0 0 * * *"]  # 毎日0時に実行
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
