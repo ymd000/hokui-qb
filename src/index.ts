@@ -1,24 +1,24 @@
 import { Hono, type Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
-import questions from './questions.json'
 
 // ---------- 型定義 ----------
 
 type Env = {
   Bindings: {
     QUIZ_PASSWORD: string
+    ADMIN_PASSWORD: string
     ASSETS: Fetcher
+    DB: D1Database
   }
 }
 
 type Question = {
   id: number
   subject: string
-  year: number
   cohort: number
   question: string
   choices: string[]
-  answer: number | number[]
+  answer: number[]
   explanation: string | null
 }
 
@@ -28,33 +28,63 @@ type SubjectSummary = {
   total: number
 }
 
+// ---------- D1 行 → Question 型変換 ----------
+
+type D1Row = {
+  id: number
+  subject: string
+  cohort: number
+  question: string
+  choices: string
+  answer: string
+  explanation: string | null
+}
+
+function rowToQuestion(row: D1Row): Question {
+  return {
+    ...row,
+    choices: JSON.parse(row.choices),
+    answer: JSON.parse(row.answer),
+  }
+}
+
 // ---------- 問題データ処理 ----------
 
-const allQuestions: Question[] = questions
+async function getSubjects(db: D1Database): Promise<SubjectSummary[]> {
+  const { results } = await db
+    .prepare('SELECT subject, cohort, COUNT(*) as count FROM questions GROUP BY subject, cohort')
+    .all<{ subject: string; cohort: number; count: number }>()
 
-function getSubjects(): SubjectSummary[] {
   const map: Record<string, Record<number, number>> = {}
-  for (const q of allQuestions) {
-    if (!map[q.subject]) map[q.subject] = {}
-    map[q.subject][q.cohort] = (map[q.subject][q.cohort] ?? 0) + 1
+  for (const row of results) {
+    if (!map[row.subject]) map[row.subject] = {}
+    map[row.subject][row.cohort] = row.count
   }
   return Object.entries(map).map(([subject, cohortCounts]) => ({
     subject,
     cohorts: Object.entries(cohortCounts)
-      .map(([y, count]) => ({ cohort: Number(y), count }))
+      .map(([c, count]) => ({ cohort: Number(c), count }))
       .sort((a, b) => b.cohort - a.cohort),
     total: Object.values(cohortCounts).reduce((s, c) => s + c, 0),
   }))
 }
 
-function getQuestions(subject: string, cohort: number): Question[] {
-  return allQuestions.filter(q => q.subject === subject && q.cohort === cohort)
+async function getQuestions(db: D1Database, subject: string, cohort: number): Promise<Question[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM questions WHERE subject = ? AND cohort = ?')
+    .bind(subject, cohort)
+    .all<D1Row>()
+  return results.map(rowToQuestion)
 }
 
 // ---------- 認証ヘルパー ----------
 
 function isLoggedIn(c: Context<Env>): boolean {
   return getCookie(c, 'logged_in') === '1'
+}
+
+function isAdmin(c: Context<Env>): boolean {
+  return getCookie(c, 'admin_logged_in') === '1'
 }
 
 function serveAsset(c: Context<Env>, path: string): Promise<Response> {
@@ -72,8 +102,6 @@ app.get('/', (c) => {
   return c.redirect('/login')
 })
 
-// ログイン処理（GET /login は assets が login.html を配信するので Worker 不要）
-// POST 先を /api/login にすることで assets ルーターとの競合を回避
 app.post('/api/login', async (c) => {
   const body = await c.req.parseBody()
   const password = body['password'] as string
@@ -81,41 +109,141 @@ app.post('/api/login', async (c) => {
   if (password !== c.env.QUIZ_PASSWORD) {
     return c.redirect('/login?error=1')
   }
-  setCookie(c, 'logged_in', '1', { httpOnly: true, path: '/' })
+  setCookie(c, 'logged_in', '1', { httpOnly: true, path: '/', maxAge: 60 * 60 * 24 * 7 })
   return c.redirect('/quiz')
 })
 
 // ログアウト
 app.get('/logout', (c) => {
   deleteCookie(c, 'logged_in', { path: '/' })
+  deleteCookie(c, 'admin_logged_in', { path: '/' })
   return c.redirect('/login')
 })
 
-// 科目ページ（認証ガード付き: /quiz/:subject は静的ファイルと競合しないので Worker が受け取る）
+// 科目ページ
 app.get('/quiz/:subject', (c) => {
   if (!isLoggedIn(c)) return c.redirect('/login')
   return serveAsset(c, '/subject.html')
 })
 
-// 演習ページ（認証ガード付き）
-app.get('/quiz/:subject/:year', (c) => {
+// 演習ページ
+app.get('/quiz/:subject/:cohort', (c) => {
   if (!isLoggedIn(c)) return c.redirect('/login')
   return serveAsset(c, '/quiz_play.html')
 })
 
 // ---------- API ----------
 
-app.get('/api/subjects', (c) => {
+app.get('/api/subjects', async (c) => {
   if (!isLoggedIn(c)) return c.json({ error: 'unauthorized' }, 401)
-  return c.json(getSubjects())
+  return c.json(await getSubjects(c.env.DB))
 })
 
-app.get('/api/questions/:subject/:year', (c) => {
+app.get('/api/questions/:subject/:cohort', async (c) => {
   if (!isLoggedIn(c)) return c.json({ error: 'unauthorized' }, 401)
   const subject = decodeURIComponent(c.req.param('subject'))
-  const year = Number(c.req.param('year'))
-  if (isNaN(year)) return c.json({ error: 'invalid year' }, 400)
-  return c.json(getQuestions(subject, year))
+  const cohort = Number(c.req.param('cohort'))
+  if (isNaN(cohort)) return c.json({ error: 'invalid cohort' }, 400)
+  return c.json(await getQuestions(c.env.DB, subject, cohort))
+})
+
+// ---------- 管理者 ----------
+
+app.post('/api/admin/login', async (c) => {
+  const body = await c.req.parseBody()
+  const password = body['password'] as string
+  if (password !== c.env.ADMIN_PASSWORD) {
+    return c.redirect('/admin/login?error=1')
+  }
+  setCookie(c, 'admin_logged_in', '1', { httpOnly: true, path: '/', maxAge: 60 * 60 * 24 * 7 })
+  return c.redirect('/admin')
+})
+
+app.get('/admin', (c) => {
+  if (!isAdmin(c)) return c.redirect('/admin/login')
+  return serveAsset(c, '/admin.html')
+})
+
+app.get('/admin/login', (c) => serveAsset(c, '/admin_login.html'))
+
+// 問題一覧取得（管理者用・全件）
+app.get('/api/admin/questions', async (c) => {
+  if (!isAdmin(c)) return c.json({ error: 'unauthorized' }, 401)
+  const { results } = await c.env.DB
+    .prepare('SELECT * FROM questions ORDER BY subject, cohort, id')
+    .all<D1Row>()
+  return c.json(results.map(rowToQuestion))
+})
+
+// 問題追加
+app.post('/api/admin/questions', async (c) => {
+  if (!isAdmin(c)) return c.json({ error: 'unauthorized' }, 401)
+  const body = await c.req.json<{
+    subject: string
+    cohort: number
+    question: string
+    choices: string[]
+    answer: number[]
+    explanation?: string
+  }>()
+
+  const { subject, cohort, question, choices, answer, explanation } = body
+
+  if (!subject || !question || !Array.isArray(choices) || choices.length < 2 || !Array.isArray(answer) || answer.length < 1) {
+    return c.json({ error: 'invalid input' }, 400)
+  }
+
+  const { meta } = await c.env.DB
+    .prepare('INSERT INTO questions (subject, cohort, question, choices, answer, explanation) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(subject, cohort, question, JSON.stringify(choices), JSON.stringify(answer), explanation ?? null)
+    .run()
+
+  return c.json({ id: meta.last_row_id }, 201)
+})
+
+// 問題削除
+app.delete('/api/admin/questions/:id', async (c) => {
+  if (!isAdmin(c)) return c.json({ error: 'unauthorized' }, 401)
+  const id = Number(c.req.param('id'))
+  if (isNaN(id)) return c.json({ error: 'invalid id' }, 400)
+
+  const { meta } = await c.env.DB
+    .prepare('DELETE FROM questions WHERE id = ?')
+    .bind(id)
+    .run()
+
+  if (meta.changes === 0) return c.json({ error: 'not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// 問題更新
+app.put('/api/admin/questions/:id', async (c) => {
+  if (!isAdmin(c)) return c.json({ error: 'unauthorized' }, 401)
+  const id = Number(c.req.param('id'))
+  if (isNaN(id)) return c.json({ error: 'invalid id' }, 400)
+
+  const body = await c.req.json<{
+    subject: string
+    cohort: number
+    question: string
+    choices: string[]
+    answer: number[]
+    explanation?: string
+  }>()
+
+  const { subject, cohort, question, choices, answer, explanation } = body
+
+  if (!subject || !question || !Array.isArray(choices) || choices.length < 2 || !Array.isArray(answer) || answer.length < 1) {
+    return c.json({ error: 'invalid input' }, 400)
+  }
+
+  const { meta } = await c.env.DB
+    .prepare('UPDATE questions SET subject=?, cohort=?, question=?, choices=?, answer=?, explanation=? WHERE id=?')
+    .bind(subject, cohort, question, JSON.stringify(choices), JSON.stringify(answer), explanation ?? null, id)
+    .run()
+
+  if (meta.changes === 0) return c.json({ error: 'not found' }, 404)
+  return c.json({ ok: true })
 })
 
 // ---------- 静的ファイル（CSS, JS）キャッチオール ----------

@@ -1,5 +1,6 @@
 # すべて無視してから許可するものを明示
 /*
+
 !/src/
 !/public/
 !/.gitignore
@@ -7,6 +8,7 @@
 !/package-lock.json
 !/tsconfig.json
 !/wrangler.toml
+!/schema.sql
 
 # src/ 以下を再帰的に許可
 /src/*
