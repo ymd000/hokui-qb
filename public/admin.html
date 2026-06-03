@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理者 | 北医QB</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .admin-container { max-width: 800px; margin: 32px auto; padding: 0 16px; }
+    .panel { background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
+    .panel h2 { margin-bottom: 20px; }
+    .question-list { list-style: none; }
+    .question-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #eee;
+      gap: 12px;
+    }
+    .question-item:last-child { border-bottom: none; }
+    .question-item-text { font-size: 0.9rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .question-item-meta { font-size: 0.8rem; color: #888; white-space: nowrap; }
+    .btn-edit { padding: 6px 14px; font-size: 0.85rem; width: auto; margin-top: 0; white-space: nowrap; }
+    .btn-delete { padding: 6px 14px; font-size: 0.85rem; width: auto; margin-top: 0; white-space: nowrap; background: #fde8e8; border: 1px solid #e74c3c; color: #c0392b; border-radius: 6px; cursor: pointer; }
+    .btn-delete:hover { background: #f5b7b1; }
+    .choices-editor { display: flex; flex-direction: column; gap: 8px; }
+    .choice-row { display: flex; gap: 8px; align-items: center; }
+    .choice-row input[type="text"] { flex: 1; }
+    .choice-row button { padding: 6px 10px; font-size: 0.8rem; background: #fde8e8; border: 1px solid #e74c3c; border-radius: 6px; cursor: pointer; color: #c0392b; }
+    .choice-row button:hover { background: #f5b7b1; }
+    .answer-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .answer-checkbox { display: flex; align-items: center; gap: 4px; font-size: 0.9rem; }
+    textarea { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; font-family: inherit; resize: vertical; }
+    select { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; background: #fff; }
+    select:focus { outline: none; border-color: #1a3a5c; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .msg { padding: 10px 14px; border-radius: 6px; font-size: 0.9rem; margin-bottom: 16px; display: none; }
+    .msg-ok { background: #d5f5e3; color: #1e8449; }
+    .msg-err { background: #fde8e8; color: #c0392b; }
+    .tab-bar { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tab { padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; background: #e8edf2; color: #555; border: none; }
+    .tab.active { background: #1a3a5c; color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-title">北医QB 管理者</span>
+    <a href="/logout" class="header-logout">ログアウト</a>
+  </div>
+
+  <div class="admin-container">
+    <div class="tab-bar">
+      <button class="tab active" onclick="switchTab('add')">問題を追加</button>
+      <button class="tab" onclick="switchTab('edit')">問題を変更</button>
+    </div>
+
+    <!-- 追加パネル -->
+    <div id="tab-add" class="tab-panel active">
+      <div class="panel">
+        <h2>問題を追加</h2>
+        <div id="add-msg-ok" class="msg msg-ok">保存しました</div>
+        <div id="add-msg-err" class="msg msg-err">エラーが発生しました</div>
+        <form id="add-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>科目</label>
+              <select id="add-subject"></select>
+            </div>
+            <div class="form-group">
+              <label>期</label>
+              <select id="add-cohort"></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>問題文</label>
+            <textarea id="add-question" rows="3" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>選択肢（最低2つ）</label>
+            <div id="add-choices" class="choices-editor"></div>
+            <button type="button" class="btn btn-secondary" style="margin-top:8px;width:auto;padding:6px 14px;font-size:0.85rem;" onclick="addChoice('add')">+ 選択肢を追加</button>
+          </div>
+          <div class="form-group">
+            <label>正解（複数選択可）</label>
+            <div id="add-answer-boxes" class="answer-checkboxes"></div>
+          </div>
+          <div class="form-group">
+            <label>解説（任意）</label>
+            <textarea id="add-explanation" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 変更パネル -->
+    <div id="tab-edit" class="tab-panel">
+      <div class="panel">
+        <h2>問題を選択</h2>
+        <ul id="question-list" class="question-list"></ul>
+      </div>
+      <div id="edit-panel" class="panel" style="display:none">
+        <h2>問題を変更</h2>
+        <div id="edit-msg-ok" class="msg msg-ok">保存しました</div>
+        <div id="edit-msg-err" class="msg msg-err">エラーが発生しました</div>
+        <form id="edit-form">
+          <input type="hidden" id="edit-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>科目</label>
+              <select id="edit-subject"></select>
+            </div>
+            <div class="form-group">
+              <label>期</label>
+              <select id="edit-cohort"></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>問題文</label>
+            <textarea id="edit-question" rows="3" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>選択肢（最低2つ）</label>
+            <div id="edit-choices" class="choices-editor"></div>
+            <button type="button" class="btn btn-secondary" style="margin-top:8px;width:auto;padding:6px 14px;font-size:0.85rem;" onclick="addChoice('edit')">+ 選択肢を追加</button>
+          </div>
+          <div class="form-group">
+            <label>正解（複数選択可）</label>
+            <div id="edit-answer-boxes" class="answer-checkboxes"></div>
+          </div>
+          <div class="form-group">
+            <label>解説（任意）</label>
+            <textarea id="edit-explanation" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUBJECTS = [
+      '消化器内科', '呼吸器内科', '血液内科', '循環器内科',
+      '腎臓内科', '内分泌・代謝内科', '神経内科', '膠原病・リウマチ内科',
+      '感染症内科', '外科', '整形外科', '産婦人科',
+      '小児科', '精神科', '皮膚科', '眼科',
+      '耳鼻咽喉科', '泌尿器科', '放射線科', '麻酔科',
+    ]
+
+    const COHORTS = Array.from({ length: 21 }, (_, i) => 95 + i) // 95〜115
+
+    // ---------- セレクト初期化 ----------
+    function initSelects() {
+      ;['add', 'edit'].forEach(prefix => {
+        const subjectEl = document.getElementById(prefix + '-subject')
+        subjectEl.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join('')
+
+        const cohortEl = document.getElementById(prefix + '-cohort')
+        cohortEl.innerHTML = COHORTS.map(c => `<option value="${c}" ${c === 100 ? 'selected' : ''}>${c}期</option>`).join('')
+      })
+    }
+
+    // ---------- タブ切り替え ----------
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+      document.getElementById('tab-' + name).classList.add('active')
+      event.target.classList.add('active')
+      if (name === 'edit') loadQuestions()
+    }
+
+    // ---------- 選択肢エディタ ----------
+    function addChoice(prefix, value = '') {
+      const container = document.getElementById(prefix + '-choices')
+      const idx = container.children.length
+      const row = document.createElement('div')
+      row.className = 'choice-row'
+      row.dataset.idx = idx
+      row.innerHTML = `
+        <input type="text" placeholder="選択肢 ${idx + 1}" value="${escHtml(value)}" oninput="updateAnswerBoxes('${prefix}')">
+        <button type="button" onclick="removeChoice(this, '${prefix}')">削除</button>
+      `
+      container.appendChild(row)
+      updateAnswerBoxes(prefix)
+    }
+
+    function removeChoice(btn, prefix) {
+      const container = document.getElementById(prefix + '-choices')
+      if (container.children.length <= 2) return
+      btn.closest('.choice-row').remove()
+      Array.from(container.children).forEach((row, i) => {
+        row.dataset.idx = i
+        row.querySelector('input').placeholder = `選択肢 ${i + 1}`
+      })
+      updateAnswerBoxes(prefix)
+    }
+
+    function updateAnswerBoxes(prefix) {
+      const container = document.getElementById(prefix + '-choices')
+      const boxContainer = document.getElementById(prefix + '-answer-boxes')
+      const checked = new Set(
+        Array.from(boxContainer.querySelectorAll('input:checked')).map(el => Number(el.value))
+      )
+      boxContainer.innerHTML = ''
+      Array.from(container.children).forEach((row, i) => {
+        const text = row.querySelector('input').value || `選択肢 ${i + 1}`
+        const label = document.createElement('label')
+        label.className = 'answer-checkbox'
+        label.innerHTML = `<input type="checkbox" value="${i}" ${checked.has(i) ? 'checked' : ''}> ${escHtml(text)}`
+        boxContainer.appendChild(label)
+      })
+    }
+
+    function getChoices(prefix) {
+      return Array.from(document.getElementById(prefix + '-choices').children)
+        .map(row => row.querySelector('input').value.trim())
+    }
+
+    function getAnswer(prefix) {
+      return Array.from(document.getElementById(prefix + '-answer-boxes').querySelectorAll('input:checked'))
+        .map(el => Number(el.value))
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    }
+
+    // ---------- バリデーション ----------
+    function validate(prefix) {
+      const subject = document.getElementById(prefix + '-subject').value
+      const choices = getChoices(prefix)
+      const answer = getAnswer(prefix)
+      if (!subject) return '科目を選択してください'
+      if (choices.length < 2) return '選択肢は最低2つ必要です'
+      if (choices.some(c => !c)) return '空の選択肢があります'
+      if (answer.length < 1) return '正解を1つ以上選んでください'
+      return null
+    }
+
+    // ---------- 追加フォーム初期化 ----------
+    function initAddForm() {
+      document.getElementById('add-choices').innerHTML = ''
+      addChoice('add')
+      addChoice('add')
+      document.getElementById('add-cohort').value = 100
+    }
+
+    // ---------- 追加フォーム送信 ----------
+    document.getElementById('add-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const err = validate('add')
+      if (err) { showMsg('add', false, err); return }
+
+      const body = {
+        subject: document.getElementById('add-subject').value,
+        cohort: Number(document.getElementById('add-cohort').value),
+        question: document.getElementById('add-question').value.trim(),
+        choices: getChoices('add'),
+        answer: getAnswer('add'),
+        explanation: document.getElementById('add-explanation').value.trim() || undefined,
+      }
+
+      const res = await fetch('/api/admin/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (res.ok) {
+        showMsg('add', true)
+        e.target.reset()
+        initAddForm()
+      } else {
+        showMsg('add', false)
+      }
+    })
+
+    // ---------- 問題一覧読み込み ----------
+    async function loadQuestions() {
+      const res = await fetch('/api/admin/questions')
+      if (!res.ok) return
+      const questions = await res.json()
+      const list = document.getElementById('question-list')
+      list.innerHTML = ''
+      questions.forEach(q => {
+        const li = document.createElement('li')
+        li.className = 'question-item'
+        li.innerHTML = `
+          <span class="question-item-meta">${escHtml(q.subject)} ${q.cohort}期</span>
+          <span class="question-item-text">${escHtml(q.question)}</span>
+          <button class="btn btn-secondary btn-edit" onclick="loadEditForm(${q.id})">編集</button>
+          <button class="btn-delete" onclick="deleteQuestion(${q.id}, this)">削除</button>
+        `
+        list.appendChild(li)
+      })
+    }
+
+    // ---------- 問題削除 ----------
+    async function deleteQuestion(id, btn) {
+      if (!confirm('この問題を削除しますか？')) return
+      const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        btn.closest('.question-item').remove()
+        const editPanel = document.getElementById('edit-panel')
+        if (document.getElementById('edit-id').value == id) editPanel.style.display = 'none'
+      }
+    }
+
+    // ---------- 変更フォームに問題を読み込む ----------
+    async function loadEditForm(id) {
+      const res = await fetch('/api/admin/questions')
+      const questions = await res.json()
+      const q = questions.find(q => q.id === id)
+      if (!q) return
+
+      document.getElementById('edit-id').value = q.id
+      document.getElementById('edit-subject').value = q.subject
+      document.getElementById('edit-cohort').value = q.cohort
+      document.getElementById('edit-question').value = q.question
+      document.getElementById('edit-explanation').value = q.explanation ?? ''
+
+      document.getElementById('edit-choices').innerHTML = ''
+      q.choices.forEach(c => addChoice('edit', c))
+
+      const boxContainer = document.getElementById('edit-answer-boxes')
+      boxContainer.querySelectorAll('input').forEach(el => {
+        el.checked = q.answer.includes(Number(el.value))
+      })
+
+      const panel = document.getElementById('edit-panel')
+      panel.style.display = 'block'
+      panel.scrollIntoView({ behavior: 'smooth' })
+    }
+
+    // ---------- 変更フォーム送信 ----------
+    document.getElementById('edit-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const err = validate('edit')
+      if (err) { showMsg('edit', false, err); return }
+
+      const id = document.getElementById('edit-id').value
+      const body = {
+        subject: document.getElementById('edit-subject').value,
+        cohort: Number(document.getElementById('edit-cohort').value),
+        question: document.getElementById('edit-question').value.trim(),
+        choices: getChoices('edit'),
+        answer: getAnswer('edit'),
+        explanation: document.getElementById('edit-explanation').value.trim() || undefined,
+      }
+
+      const res = await fetch(`/api/admin/questions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (res.ok) {
+        showMsg('edit', true)
+        loadQuestions()
+      } else {
+        showMsg('edit', false)
+      }
+    })
+
+    // ---------- メッセージ表示 ----------
+    function showMsg(prefix, ok, text) {
+      const okEl = document.getElementById(prefix + '-msg-ok')
+      const errEl = document.getElementById(prefix + '-msg-err')
+      okEl.style.display = 'none'
+      errEl.style.display = 'none'
+      if (ok) {
+        okEl.style.display = 'block'
+        setTimeout(() => okEl.style.display = 'none', 3000)
+      } else {
+        errEl.textContent = text || 'エラーが発生しました'
+        errEl.style.display = 'block'
+        setTimeout(() => errEl.style.display = 'none', 4000)
+      }
+    }
+
+    // ---------- 初期化 ----------
+    initSelects()
+    initAddForm()
+
+    // 未ログイン時は /admin/login にリダイレクト
+    fetch('/api/admin/questions').then(r => {
+      if (r.status === 401) location.href = '/admin/login'
+    })
+  </script>
+</body>
+</html>

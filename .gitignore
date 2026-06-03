@@ -11,7 +11,7 @@
 !/schema.sql
 
 # src/ 以下を再帰的に許可
-/src/*
+!/src/*
 
 # public/ 以下を再帰的に許可
-/public/*
+!/public/*

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理者ログイン | 北医QB</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container center-page">
+    <h1 class="site-title">北医QB 管理者</h1>
+    <p id="error-msg" class="error-msg" style="display:none">パスワードが正しくありません</p>
+    <form method="post" action="/api/admin/login">
+      <div class="form-group">
+        <label for="password">管理者パスワード</label>
+        <input type="password" id="password" name="password" required autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary">ログイン</button>
+    </form>
+  </div>
+  <script>
+    if (new URLSearchParams(location.search).get('error')) {
+      document.getElementById('error-msg').style.display = 'block'
+      history.replaceState({}, '', '/admin/login')
+    }
+
+  </script>
+</body>
+</html>
