@@ -121,7 +121,7 @@ function render() {
     ? qData.answer.map(i => qData.choices[i]).join('、')
     : qData.choices[qData.answer];
 
-  const explanation = answer !== undefined
+  const explanation = answer !== undefined && mode !== 'exam'
     ? `<div class="explanation">
         <p class="correct-answer">解答：${correctAnswerText}</p>
         <strong>解説</strong><p>${qData.explanation}</p>
