@@ -28,23 +28,50 @@ type SubjectSummary = {
   total: number
 }
 
-// ---------- D1 行 → Question 型変換 ----------
+// ---------- D1 行型 ----------
 
-type D1Row = {
+type D1QuestionRow = {
   id: number
   subject: string
   cohort: number
   question: string
-  choices: string
-  answer: string
   explanation: string | null
 }
 
-function rowToQuestion(row: D1Row): Question {
+type D1ChoiceRow = {
+  id: number
+  question_id: number
+  body: string
+  is_correct: number
+  position: number
+}
+
+// ---------- choices 取得ヘルパー ----------
+
+async function fetchChoiceMap(db: D1Database, questionIds: number[]): Promise<Map<number, D1ChoiceRow[]>> {
+  if (questionIds.length === 0) return new Map()
+  const map = new Map<number, D1ChoiceRow[]>()
+  const CHUNK = 90 // D1のbindパラメータ上限対策
+  for (let i = 0; i < questionIds.length; i += CHUNK) {
+    const chunk = questionIds.slice(i, i + CHUNK)
+    const placeholders = chunk.map(() => '?').join(',')
+    const { results } = await db
+      .prepare(`SELECT * FROM choices WHERE question_id IN (${placeholders}) ORDER BY position`)
+      .bind(...chunk)
+      .all<D1ChoiceRow>()
+    for (const row of results) {
+      if (!map.has(row.question_id)) map.set(row.question_id, [])
+      map.get(row.question_id)!.push(row)
+    }
+  }
+  return map
+}
+
+function buildQuestion(row: D1QuestionRow, choices: D1ChoiceRow[]): Question {
   return {
     ...row,
-    choices: JSON.parse(row.choices),
-    answer: JSON.parse(row.answer),
+    choices: choices.map(c => c.body),
+    answer: choices.filter(c => c.is_correct === 1).map(c => c.position),
   }
 }
 
@@ -113,10 +140,12 @@ async function getSubjects(db: D1Database): Promise<SubjectSummary[]> {
 
 async function getQuestions(db: D1Database, subject: string, cohort: number): Promise<Question[]> {
   const { results } = await db
-    .prepare('SELECT * FROM questions WHERE subject = ? AND cohort = ?')
+    .prepare('SELECT * FROM questions WHERE subject = ? AND cohort = ? ORDER BY id')
     .bind(subject, cohort)
-    .all<D1Row>()
-  return results.map(rowToQuestion)
+    .all<D1QuestionRow>()
+  if (results.length === 0) return []
+  const choiceMap = await fetchChoiceMap(db, results.map(r => r.id))
+  return results.map(row => buildQuestion(row, choiceMap.get(row.id) ?? []))
 }
 
 // ---------- ヘルパー ----------
@@ -221,8 +250,11 @@ app.get('/api/admin/questions', async (c) => {
   const { results } = await c.env.DB
     .prepare(`SELECT * FROM questions${where} ORDER BY id`)
     .bind(...bindings)
-    .all<D1Row>()
-  return c.json(results.map(rowToQuestion))
+    .all<D1QuestionRow>()
+
+  if (results.length === 0) return c.json([])
+  const choiceMap = await fetchChoiceMap(c.env.DB, results.map(r => r.id))
+  return c.json(results.map(row => buildQuestion(row, choiceMap.get(row.id) ?? [])))
 })
 
 // 問題1件取得
@@ -234,9 +266,10 @@ app.get('/api/admin/questions/:id', async (c) => {
   const row = await c.env.DB
     .prepare('SELECT * FROM questions WHERE id = ?')
     .bind(id)
-    .first<D1Row>()
+    .first<D1QuestionRow>()
   if (!row) return c.json({ error: 'not found' }, 404)
-  return c.json(rowToQuestion(row))
+  const choiceMap = await fetchChoiceMap(c.env.DB, [id])
+  return c.json(buildQuestion(row, choiceMap.get(id) ?? []))
 })
 
 // 問題削除
@@ -245,10 +278,12 @@ app.delete('/api/admin/questions/:id', async (c) => {
   if (session?.role !== 'admin') return c.json({ error: 'unauthorized' }, 401)
   const id = Number(c.req.param('id'))
   if (isNaN(id)) return c.json({ error: 'invalid id' }, 400)
-  const { meta } = await c.env.DB
-    .prepare('DELETE FROM questions WHERE id = ?')
-    .bind(id)
-    .run()
+  // choices は ON DELETE CASCADE で連動削除されるが、
+  // D1 は PRAGMA foreign_keys が無効なため手動で先に削除する
+  const { meta } = await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM choices WHERE question_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM questions WHERE id = ?').bind(id),
+  ]).then(results => results[1])
   if (meta.changes === 0) return c.json({ error: 'not found' }, 404)
   return c.json({ ok: true })
 })
@@ -275,12 +310,20 @@ app.put('/api/admin/questions/:id', async (c) => {
     return c.json({ error: 'invalid input' }, 400)
   }
 
-  const { meta } = await c.env.DB
-    .prepare('UPDATE questions SET subject=?, cohort=?, question=?, choices=?, answer=?, explanation=? WHERE id=?')
-    .bind(subject, cohort, question, JSON.stringify(choices), JSON.stringify(answer), explanation ?? null, id)
-    .run()
+  const choiceInserts = choices.map((choiceBody, i) =>
+    c.env.DB
+      .prepare('INSERT INTO choices (question_id, body, is_correct, position) VALUES (?, ?, ?, ?)')
+      .bind(id, choiceBody, answer.includes(i) ? 1 : 0, i)
+  )
 
-  if (meta.changes === 0) return c.json({ error: 'not found' }, 404)
+  await c.env.DB.batch([
+    c.env.DB
+      .prepare('UPDATE questions SET subject=?, cohort=?, question=?, explanation=? WHERE id=?')
+      .bind(subject, cohort, question, explanation ?? null, id),
+    c.env.DB.prepare('DELETE FROM choices WHERE question_id = ?').bind(id),
+    ...choiceInserts,
+  ])
+
   return c.json({ ok: true })
 })
 

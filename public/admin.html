@@ -207,26 +207,55 @@
   </div>
 
   <script>
-    const SUBJECTS = [
-      '消化器内科', '呼吸器内科', '血液内科', '循環器内科',
-      '腎臓内科', '内分泌・代謝内科', '神経内科', '膠原病・リウマチ内科',
-      '感染症内科', '外科', '整形外科', '産婦人科',
-      '小児科', '精神科', '皮膚科', '眼科',
-      '耳鼻咽喉科', '泌尿器科', '放射線科', '麻酔科',
-    ]
+    // subject → cohort[] のマップ（APIから取得）
+    const subjectMap = {}
 
-    const COHORTS = Array.from({ length: 21 }, (_, i) => 95 + i) // 95〜115
+    function cohortsForSubject(subject) {
+      return (subjectMap[subject] || []).map(e => e.cohort).sort((a, b) => b - a)
+    }
 
-    // ---------- セレクト初期化 ----------
-    function initSelects() {
-      ;['add', 'edit', 'filter'].forEach(prefix => {
+    function populateSubject(el, selectedValue) {
+      const subjects = Object.keys(subjectMap).sort()
+      el.innerHTML = subjects.map(s =>
+        `<option value="${s}" ${s === selectedValue ? 'selected' : ''}>${s}</option>`
+      ).join('')
+    }
+
+    function populateCohort(el, subject, selectedValue) {
+      const cohorts = cohortsForSubject(subject)
+      el.innerHTML = cohorts.map(c =>
+        `<option value="${c}" ${c == selectedValue ? 'selected' : ''}>${c}期</option>`
+      ).join('')
+    }
+
+    // ---------- セレクト初期化（APIから取得） ----------
+    async function initSelects() {
+      const res = await fetch('/api/subjects')
+      if (!res.ok) return
+      const data = await res.json()
+      Object.assign(subjectMap, Object.fromEntries(data.map(s => [s.subject, s.cohorts])))
+
+      ;['add', 'filter'].forEach(prefix => {
         const subjectEl = document.getElementById(prefix + '-subject')
-        if (subjectEl) subjectEl.innerHTML = SUBJECTS.map(s => `<option value="${s}">${s}</option>`).join('')
-
+        if (!subjectEl) return
+        populateSubject(subjectEl)
         const cohortEl = document.getElementById(prefix + '-cohort')
-        if (cohortEl) cohortEl.innerHTML = COHORTS.map(c => `<option value="${c}" ${c === 100 ? 'selected' : ''}>${c}期</option>`).join('')
+        if (cohortEl) {
+          populateCohort(cohortEl, subjectEl.value)
+          subjectEl.addEventListener('change', () => populateCohort(cohortEl, subjectEl.value))
+        }
       })
 
+      // edit フォームの科目・期は loadEditForm 時に設定するので subject 選択肢だけ用意
+      const editSubjectEl = document.getElementById('edit-subject')
+      if (editSubjectEl) {
+        populateSubject(editSubjectEl)
+        const editCohortEl = document.getElementById('edit-cohort')
+        if (editCohortEl) {
+          populateCohort(editCohortEl, editSubjectEl.value)
+          editSubjectEl.addEventListener('change', () => populateCohort(editCohortEl, editSubjectEl.value))
+        }
+      }
     }
 
     // ---------- タブ切り替え ----------
@@ -588,5 +617,6 @@
       if (r.status === 401) location.href = '/admin/login'
     })
   </script>
+  <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "e09480df6d764a7aa17e74121bf015d2"}'></script>
 </body>
 </html>
